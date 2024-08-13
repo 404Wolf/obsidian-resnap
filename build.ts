@@ -3,7 +3,7 @@ import { build } from "esbuild";
 build({
   entryPoints: ["src/plugin.ts"],
   bundle: true,
-  outfile: "dist/plugin.js",
+  outfile: "dist/main.js",
   sourcemap: true,
   external: ["obsidian"],
   logLevel: "info",

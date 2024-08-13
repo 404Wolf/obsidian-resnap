@@ -1,50 +1,33 @@
-import { type App, FileSystemAdapter, PluginSettingTab, Setting } from "obsidian";
+import { type App, PluginSettingTab, Setting } from "obsidian";
 import type MyPlugin from "./plugin";
+
+export interface MyPluginSettings {
+  reSnapPath: string;
+  invertRemarkableImages: boolean;
+  outputPath: string;
+  rmAddress: string;
+  rmSshKeyAddress: string;
+  postprocessor: string;
+}
+
+export const DEFAULT_SETTINGS: MyPluginSettings = {
+  reSnapPath: "reSnap",
+  invertRemarkableImages: false,
+  outputPath: "Remarkable",
+  rmAddress: "10.11.99.1",
+  rmSshKeyAddress: "~/.ssh/remarkable",
+  postprocessor: "",
+};
 
 export default class SettingsTab extends PluginSettingTab {
   plugin: MyPlugin;
-  outputPathInfo?: HTMLElement;
-  outputPathError?: HTMLElement;
-  outputPathSuccess?: HTMLElement;
 
   constructor(app: App, plugin: MyPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  /**
-   * Taken and modified from hans/obsidian-citation-plugin. Cheers!
-   * Returns true iff the path exists (relative to the vault directory).
-   * Displays error/success/info in the settings as a side-effect.
-   */
-  public checkOutputFolder = async (outputFolder: string): Promise<boolean> => {
-    this.outputPathInfo!.addClass("d-none");
-
-    try {
-      const adapter = this.app.vault.adapter;
-      if (adapter instanceof FileSystemAdapter) {
-        const resolvedPath = outputFolder; //this.plugin.resolveLibraryPath(outputFolder);
-        const stat = await adapter.stat(resolvedPath);
-        if (stat && stat.type !== "folder") {
-          throw new Error("Chosen output folder is not a folder!");
-        }
-      } else {
-        throw new Error(
-          "Could not get FileSystemAdapter! Is this running on mobile...?",
-        );
-      }
-    } catch (e) {
-      this.outputPathSuccess!.style.display = "none";
-      this.outputPathError!.style.display = "block";
-      return false;
-    } finally {
-      this.outputPathInfo!.style.display = "none";
-    }
-
-    return true;
-  };
-
-  display(): void {
+  display = (): void => {
     let { containerEl } = this;
 
     containerEl.empty();
@@ -66,11 +49,20 @@ export default class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("reSnap executable")
-      .setDesc("The path to the reSnap executable")
+      .setName("SSH key")
+      .setDesc("The private ssh key for authing into the remarkable")
       .addText((text) =>
         text
-          .setPlaceholder("Paste in the absolute path to reSnap.sh")
+          .setPlaceholder("/home/name/.ssh/something")
+          .setValue(this.plugin.settings.rmSshKeyAddress),
+      );
+
+    new Setting(containerEl)
+      .setName("reSnap executable")
+      .setDesc("The path to the reSnap executable if it's not in $PATH")
+      .addText((text) =>
+        text
+          .setPlaceholder("reSnap path if not in $PATH")
           .setValue(this.plugin.settings.reSnapPath)
           .onChange(async (value) => {
             this.plugin.settings.reSnapPath = value;
@@ -83,50 +75,24 @@ export default class SettingsTab extends PluginSettingTab {
       .setDesc("The folder where rM drawing images should be stored")
       .addText((text) =>
         text
-          .setPlaceholder("Some folder from your Vault")
-          .setValue(this.plugin.settings.outputPath)
-          .onChange(async (value) => {
-            let success = await this.checkOutputFolder(value);
-            if (success) {
-              this.plugin.settings.outputPath = value;
-              await this.plugin.saveSettings();
-              this.outputPathError.style.display = "none";
-              this.outputPathSuccess.style.display = "block";
-            }
-          }),
+          .setPlaceholder("Folder in vault")
+          .setValue(this.plugin.settings.outputPath),
       );
-    this.outputPathInfo = containerEl.createEl("p", {
-      cls: "remarkable-output-path-info d-none",
-      text: "Checking output folder...",
-    });
-    this.outputPathError = containerEl.createEl("p", {
-      cls: "remarkable-output-path-error d-none",
-      text:
-        "The output folder does not seem to exist. " +
-        "Please type in a path to a folder that exists inside the vault.",
-    });
-    this.outputPathSuccess = containerEl.createEl("p", {
-      cls: "remarkable-output-path-success d-none",
-      text: "Successfully set the output folder.",
-    });
-    this.outputPathInfo.style.display = "none";
-    this.outputPathError.style.display = "none";
-    this.outputPathSuccess.style.display = "none";
 
     new Setting(containerEl)
-      .setName("Postprocessing script")
+      .setName("Postprocessing executable")
       .setDesc(
-        "The absolute path to a script that post-processes the captured image. " +
+        "The absolute path to an executable that post-processes the captured image. " +
           "The script will be passed the filename and should overwrite the file with a modified version.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("/some/path/to/some/script")
+          .setPlaceholder("Path or executable name")
           .setValue(this.plugin.settings.postprocessor)
           .onChange(async (value) => {
             this.plugin.settings.postprocessor = value;
             await this.plugin.saveSettings();
           }),
       );
-  }
+  };
 }

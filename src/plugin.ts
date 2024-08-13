@@ -1,24 +1,14 @@
-import { Notice, Plugin, Editor, FileSystemAdapter } from "obsidian";
-
+import { MarkdownView, Notice, Plugin } from "obsidian";
+import { tmpdir } from "os";
 import * as path from "path";
-import moment from "moment";
-import SettingsTab from "./settings";
+import * as fs from "fs/promises";
+import { Orientation } from "./types/enums.ts";
 
-interface MyPluginSettings {
-  reSnapPath: string;
-  invertRemarkableImages: boolean;
-  outputPath: string;
-  rmAddress: string;
-  postprocessor: string;
-}
-
-const DEFAULT_SETTINGS: MyPluginSettings = {
-  reSnapPath: "",
-  invertRemarkableImages: true,
-  outputPath: ".",
-  rmAddress: "10.11.99.1",
-  postprocessor: "",
-};
+import SettingsTab, {
+  DEFAULT_SETTINGS,
+  type MyPluginSettings,
+} from "./settings";
+import callReSnap from "./resnap/index.ts";
 
 export default class MyPlugin extends Plugin {
   settings: MyPluginSettings = DEFAULT_SETTINGS;
@@ -31,7 +21,7 @@ export default class MyPlugin extends Plugin {
       id: "insert-remarkable-drawing",
       name: "Insert a drawing from the reMarkable",
       callback: () => {
-        plugin.tryInsertingDrawing(false);
+        plugin.tryInsertingDrawing(Orientation.PORTRAIT);
       },
     });
 
@@ -39,75 +29,79 @@ export default class MyPlugin extends Plugin {
       id: "insert-remarkable-drawing-landscape",
       name: "Insert a landscape-format drawing from the reMarkable",
       callback: () => {
-        plugin.tryInsertingDrawing(true);
+        plugin.tryInsertingDrawing(Orientation.LANDSCAPE);
       },
     });
 
     this.addSettingTab(new SettingsTab(this.app, this));
   }
 
-  async loadSettings() {
+  loadSettings = async () => {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-  }
+  };
 
-  async saveSettings() {
+  saveSettings = async () => {
     await this.saveData(this.settings);
-  }
+  };
 
-  async postprocessDrawing(drawingFilePath: string) {
+  postprocessDrawing = async (drawingFilePath: string) => {
     const { postprocessor } = this.settings;
     if (postprocessor) {
       const args = [drawingFilePath];
       Bun.spawn([postprocessor, ...args]);
     }
     return true;
-  }
+  };
 
-  async tryInsertingDrawing(landscape: boolean) {
-    let success = false;
+  tryInsertingDrawing = async (orientation: Orientation): Promise<void> => {
     new Notice("Inserting rM drawing...", 1000);
 
     try {
-      // remember the editor here, so the user could change mode (e.g. preview mode)
-      // in the meantime without an error
-      const editor = this.editor;
-      const { drawingFilePath, drawingFileName } =
-        await this.callReSnap(landscape);
-      await this.postprocessDrawing(drawingFilePath); // no-op if no postprocessor set
+      const fileName = `${crypto.randomUUID()}.png`;
+      const outputFilePath = path.join(tmpdir(), fileName);
+      await callReSnap(
+        this.settings.reSnapPath,
+        this.settings.rmSshKeyAddress,
+        outputFilePath,
+        orientation,
+      );
 
-      editor.replaceRange(`![[${drawingFileName}]]`, editor.getCursor());
-      new Notice("Inserted your rM drawing!");
-      return true;
+      // Get the vault's root path
+      const resourceRoot = this.app.vault.getFolderByPath(
+        this.settings.outputPath,
+      );
+      if (resourceRoot === null)
+        throw new Error("Could not find the resource root!");
+      console.log("Resource root:", resourceRoot);
+
+      // Copy the image to the vault if it's not already there
+      const vaultImagePath = path.join(resourceRoot.path, fileName);
+      console.log("Copying drawing to vault:", vaultImagePath);
+      //@ts-ignore
+      const vaultBasePath = await this.app.vault.adapter.basePath;
+      console.log(vaultBasePath);
+      const vaultResourceDumpPath = path.join(vaultBasePath, vaultImagePath);
+      await fs.copyFile(outputFilePath, vaultResourceDumpPath);
+      fs.unlink(outputFilePath)
+        .then(() => console.log("Deleted temporary file:", outputFilePath))
+        .catch((error) =>
+          console.error("Could not delete temporary file:", error),
+        );
+
+      // Create the markdown for the image
+      const imageMarkdown = `![[${fileName}]]`;
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view) {
+        const editor = view.editor;
+        const cursor = editor.getCursor();
+        editor.replaceRange(imageMarkdown, cursor);
+      } else throw new Error("No markdown view found!");
     } catch (error) {
       new Notice(
         "Could not insert your rM drawing! Is your tablet connected " +
           "and reachable at the configured address?",
       );
       throw error;
-      return false;
     }
-  }
-
-  /* Taken and adapted from hans/obsidian-citation-plugin. Cheers! */
-  get editor(): Editor {
-    const view = this.app.workspace.activeLeaf.view;
-    try {
-      if (view.editMode.type == "source") {
-        return view.editor;
-      } else {
-        return null;
-      }
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /* Taken from hans/obsidian-citation-plugin. Cheers! */
-  resolveLibraryPath(rawPath: string): string {
-    const vaultRoot =
-      this.app.vault.adapter instanceof FileSystemAdapter
-        ? this.app.vault.adapter.getBasePath()
-        : "/";
-    return path.resolve(vaultRoot, rawPath);
-  }
+  };
 }
