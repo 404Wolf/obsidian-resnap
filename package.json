@@ -1,16 +1,17 @@
 {
   "name": "remarkable-obsidian-integration",
   "module": "plugin.ts",
-  "type": "module",
-  "scripts": {
-    "dev": "bunx nodemon --ext ts js --watch manifest.json --exec 'bun run build'",
-    "build": "bun run ./build.ts"
-  },
   "devDependencies": {
     "@types/bun": "latest",
+    "esbuild": "^0.23.0",
     "obsidian": "^1.6.6"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
-  }
+  },
+  "scripts": {
+    "dev": "bunx nodemon --ext ts js --exec 'bun run build'",
+    "build": "bun run ./build.ts"
+  },
+  "type": "module"
 }
