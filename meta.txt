@@ -1,0 +1,22 @@
+{
+	"inputs": {
+		"src/plugin.ts": {
+			"bytes": 30,
+			"imports": [],
+			"format": "esm"
+		}
+	},
+	"outputs": {
+		"dist/plugin.js": {
+			"imports": [],
+			"exports": [],
+			"entryPoint": "src/plugin.ts",
+			"inputs": {
+				"src/plugin.ts": {
+					"bytesInOutput": 30
+				}
+			},
+			"bytes": 44
+		}
+	}
+}
